@@ -1,0 +1,2 @@
+[console_scripts]
+faro-cipher = faro_cipher.cli:main
