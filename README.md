@@ -1,3 +1,5 @@
+# Warning, vibecoded slop
+
 # Faro Cipher - High-Performance File Encryption
 
 A high-performance file encryption system based on the Faro shuffle (card shuffling technique) applied to bit arrays. Built for algorithmic performance optimization and cryptographic research.
@@ -201,3 +203,4 @@ Benchmarks on typical hardware:
 - **Maximum Profile**: ~0.4 MB/s, 12 rounds
 
 *Performance varies based on hardware and data characteristics*
+
