@@ -1,176 +1,102 @@
 """
 Faro Cipher Transform Functions
-==============================
+================================
+Seven self-inverse byte-level transforms. "Self-inverse" means applying a transform
+twice with the same key returns the original data, so encryption and decryption
+use the exact same transform function.
 
-Transform functions for bit manipulation in the Faro Cipher.
-All transforms are self-inverse (applying twice returns original data).
+Each transform operates on full bytes (XOR 0xFF to flip all 8 bits) rather than
+individual bits, giving an 8x memory and speed improvement over the bit-level approach.
 """
 
 import numpy as np
 
-try:
-    from numba import njit
-    HAS_NUMBA = True
-except ImportError:
-    HAS_NUMBA = False
-    def njit(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
+# Maps name -> callable for use by the round structure.
+AVAILABLE_TRANSFORMS: dict
 
-@njit
-def enhanced_xor_transform(bits: np.ndarray, key: int) -> np.ndarray:
-    """
-    Enhanced XOR transform with key-dependent pattern.
-    Self-inverse: applying twice returns original data.
-    """
-    result = bits.copy()
-    n = len(result)
-    
-    for i in range(n):
-        # Create key-dependent pattern
-        pattern = (key + i * 7) % 256
-        if pattern % 3 == 0:
-            result[i] = 1 - result[i]  # Flip bit
-    
+
+def enhanced_xor(data: np.ndarray, key: int) -> np.ndarray:
+    """Flip bytes at positions where (key + i*7) % 256 is divisible by 3."""
+    result = data.copy()
+    idx = np.arange(len(data))
+    mask = (key + idx * 7) % 256 % 3 == 0
+    result[mask] ^= 0xFF
     return result
 
-@njit
-def fibonacci_transform(bits: np.ndarray, key: int) -> np.ndarray:
-    """
-    Fibonacci-based transform pattern.
-    Self-inverse: applying twice returns original data.
-    """
-    result = bits.copy()
-    n = len(result)
-    
-    if n < 2:
-        return result
-    
-    # Generate Fibonacci-like sequence starting with key
+
+def fibonacci(data: np.ndarray, key: int) -> np.ndarray:
+    """Flip bytes at positions determined by a Fibonacci-like sequence seeded by key."""
+    result = data.copy()
+    n = len(data)
     fib_a, fib_b = key % 100, (key // 100) % 100
-    
+    flip = np.zeros(n, dtype=bool)
     for i in range(n):
         if fib_a % 4 == 0:
-            result[i] = 1 - result[i]
-        
-        # Next Fibonacci number
+            flip[i] = True
         fib_a, fib_b = fib_b, (fib_a + fib_b) % 1000
-    
+    result[flip] ^= 0xFF
     return result
 
-@njit
-def avalanche_cascade_transform(bits: np.ndarray, key: int) -> np.ndarray:
-    """
-    Simple self-inverse transform with key-dependent bit flipping.
-    Self-inverse: applying twice returns original data.
-    """
-    result = bits.copy()
-    n = len(result)
-    
-    if n == 0:
-        return result
-    
-    # Simple key-dependent bit flipping (guaranteed self-inverse)
+
+def avalanche_cascade(data: np.ndarray, key: int) -> np.ndarray:
+    """Flip bytes that satisfy any of three overlapping key-dependent patterns."""
+    result = data.copy()
+    idx = np.arange(len(data))
+    p1 = (key + idx * 7)  % 256
+    p2 = (key * 3 + idx * 13) % 256
+    p3 = (key ^ (idx * 17)) % 256
+    mask = (p1 % 8 == 0) | (p2 % 7 == 1) | (p3 % 9 == 3)
+    result[mask] ^= 0xFF
+    return result
+
+
+def prime_sieve(data: np.ndarray, key: int) -> np.ndarray:
+    """Flip bytes at positions (offset by key) that pass a simple primality test."""
+    result = data.copy()
+    n = len(data)
+    base = 2 + (key % 97)
     for i in range(n):
-        # Create multiple key-dependent patterns for good diffusion
-        pattern1 = (key + i * 7) % 256
-        pattern2 = (key * 3 + i * 13) % 256
-        pattern3 = (key ^ (i * 17)) % 256
-        
-        # Flip bit if any of several conditions are met
-        # Each condition is applied identically on both passes, so it's self-inverse
-        if (pattern1 % 8 == 0) or (pattern2 % 7 == 1) or (pattern3 % 9 == 3):
-            result[i] = 1 - result[i]
-    
+        pos = i + base
+        is_prime = pos >= 2 and all(pos % j != 0 for j in range(2, min(int(pos ** 0.5) + 1, 20)))
+        if is_prime:
+            result[i] ^= 0xFF
     return result
 
-@njit
-def prime_sieve_transform(bits: np.ndarray, key: int) -> np.ndarray:
-    """
-    Prime number sieve-based transform.
-    Self-inverse: applying twice returns original data.
-    """
-    result = bits.copy()
-    n = len(result)
-    
-    # Simple prime check for positions
-    base_prime = 2 + (key % 97)  # Start with a prime near key
-    
-    for i in range(n):
-        pos = i + base_prime
-        # Simple primality test
-        is_prime_pos = True
-        if pos < 2:
-            is_prime_pos = False
-        else:
-            for j in range(2, min(int(pos**0.5) + 1, 20)):
-                if pos % j == 0:
-                    is_prime_pos = False
-                    break
-        
-        if is_prime_pos:
-            result[i] = 1 - result[i]
-    
+
+def invert(data: np.ndarray, key: int) -> np.ndarray:
+    """Flip bytes at every third position offset by key."""
+    result = data.copy()
+    idx = np.arange(len(data))
+    result[(idx + key) % 3 == 0] ^= 0xFF
     return result
 
-@njit
-def invert_transform(bits: np.ndarray, key: int) -> np.ndarray:
-    """
-    Simple invert transform with key pattern.
-    Self-inverse: applying twice returns original data.
-    """
-    result = bits.copy()
-    
-    for i in range(len(result)):
-        if (i + key) % 3 == 0:
-            result[i] = 1 - result[i]
-    
+
+def swap_pairs(data: np.ndarray, key: int) -> np.ndarray:
+    """Swap adjacent byte pairs at positions where (i + key) % 4 == 0."""
+    result = data.copy()
+    n = len(data)
+    pair_starts = np.arange(0, n - 1, 2)
+    swap_at = pair_starts[(pair_starts + key) % 4 == 0]
+    tmp = result[swap_at].copy()
+    result[swap_at] = result[swap_at + 1]
+    result[swap_at + 1] = tmp
     return result
 
-@njit
-def swap_pairs_transform(bits: np.ndarray, key: int) -> np.ndarray:
-    """
-    Swap adjacent pairs based on key pattern.
-    Self-inverse: applying twice returns original data.
-    """
-    result = bits.copy()
-    
-    for i in range(0, len(result) - 1, 2):
-        if (i + key) % 4 == 0:
-            result[i], result[i + 1] = result[i + 1], result[i]
-    
+
+def bit_flip(data: np.ndarray, key: int) -> np.ndarray:
+    """Flip bytes at positions where (i * key) % 7 == 0."""
+    result = data.copy()
+    idx = np.arange(len(data))
+    result[(idx * key) % 7 == 0] ^= 0xFF
     return result
 
-@njit
-def bit_flip_transform(bits: np.ndarray, key: int) -> np.ndarray:
-    """
-    Flip bits at key-determined positions.
-    Self-inverse: applying twice returns original data.
-    """
-    result = bits.copy()
-    
-    for i in range(len(result)):
-        if (i * key) % 7 == 0:
-            result[i] = 1 - result[i]
-    
-    return result
 
-# Available transforms registry
 AVAILABLE_TRANSFORMS = {
-    'enhanced_xor': enhanced_xor_transform,
-    'fibonacci': fibonacci_transform,
-    'avalanche_cascade': avalanche_cascade_transform,
-    'prime_sieve': prime_sieve_transform,
-    'invert': invert_transform,
-    'swap_pairs': swap_pairs_transform,
-    'bit_flip': bit_flip_transform,
+    'enhanced_xor':    enhanced_xor,
+    'fibonacci':       fibonacci,
+    'avalanche_cascade': avalanche_cascade,
+    'prime_sieve':     prime_sieve,
+    'invert':          invert,
+    'swap_pairs':      swap_pairs,
+    'bit_flip':        bit_flip,
 }
-
-def get_transform_function(name: str):
-    """Get transform function by name"""
-    return AVAILABLE_TRANSFORMS.get(name)
-
-def list_available_transforms():
-    """List all available transform names"""
-    return list(AVAILABLE_TRANSFORMS.keys()) 

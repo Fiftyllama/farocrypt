@@ -1,57 +1,38 @@
 #!/usr/bin/env python3
-"""Quick test to verify decryption works"""
+"""Quick round-trip test via file encrypt/decrypt."""
 
-from faro_cipher_ultra_optimized import UltraOptimizedFaroCipher
 import os
+import sys
+import tempfile
+import unittest
 
-def quick_test():
-    # Create test data
-    test_data = b'Hello, this is a test message for our cipher!'
-    with open('test.txt', 'wb') as f:
-        f.write(test_data)
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from faro_cipher import FaroCipher
 
-    print("🧪 Quick decryption test")
-    
-    # Test encryption
-    cipher = UltraOptimizedFaroCipher()
-    print("🔐 Encrypting...")
-    metadata = cipher.encrypt_file('test.txt', 'test.enc', progress=False)
 
-    # Test decryption  
-    print("🔓 Decrypting...")
-    success = cipher.decrypt_file('test.enc', 'test.dec', metadata, progress=False)
+class QuickTest(unittest.TestCase):
+    def test_file_round_trip(self):
+        data = b'Hello, this is a test message for our cipher!'
+        key = b'quick-test-key'
+        cipher = FaroCipher(key=key, profile='performance')
 
-    # Check result
-    if success:
-        with open('test.dec', 'rb') as f:
-            decrypted = f.read()
-        if decrypted == test_data:
-            print('✅ SUCCESS: Decryption works correctly!')
-            return True
-        else:
-            print('❌ FAILED: Data mismatch')
-            print(f'Original:  {test_data}')
-            print(f'Decrypted: {decrypted}')
-            return False
-    else:
-        print('❌ FAILED: Decryption returned False')
-        return False
+        with tempfile.TemporaryDirectory() as tmp:
+            plain_path = os.path.join(tmp, 'plain.bin')
+            enc_path   = os.path.join(tmp, 'plain.enc')
+            dec_path   = os.path.join(tmp, 'plain.dec')
 
-if __name__ == "__main__":
-    try:
-        result = quick_test()
-        
-        # Cleanup
-        for file in ['test.txt', 'test.enc', 'test.dec']:
-            if os.path.exists(file):
-                os.remove(file)
-        
-        if result:
-            print("\n🎉 Quick test PASSED!")
-        else:
-            print("\n💥 Quick test FAILED!")
-            
-    except Exception as e:
-        print(f"❌ Test failed with error: {e}")
-        import traceback
-        traceback.print_exc() 
+            with open(plain_path, 'wb') as f:
+                f.write(data)
+
+            metadata = cipher.encrypt_file(plain_path, enc_path)
+            ok = cipher.decrypt_file(enc_path, dec_path, metadata)
+            self.assertTrue(ok)
+
+            with open(dec_path, 'rb') as f:
+                decrypted = f.read()
+
+            self.assertEqual(data, decrypted)
+
+
+if __name__ == '__main__':
+    unittest.main()

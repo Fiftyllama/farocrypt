@@ -1,291 +1,187 @@
 """
 Faro Cipher Shuffle Functions
-============================
-
-Reliable shuffle implementations for the Faro Cipher.
-Only includes variants that have been verified as reliable.
+==============================
+Byte-level shuffle and inverse-shuffle implementations for all five shuffle types
+(none, in, out, milk, cut) with four variants each. Operates directly on bytes,
+avoiding bit-expansion for an 8x memory and speed improvement over bit-level code.
 """
 
 import numpy as np
 
-try:
-    from numba import njit
-    HAS_NUMBA = True
-except ImportError:
-    HAS_NUMBA = False
-    def njit(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
-
-# Reliable shuffle variants discovered through comprehensive testing
+# All shuffle types and their valid variant indices.
 RELIABLE_SHUFFLE_VARIANTS = {
-    'none': [0, 1, 2, 3],      # All variants work (no shuffling)
-    'in': [0, 1, 2, 3],        # All variants work
-    'out': [0, 1, 2, 3],       # All variants work
-    'milk': [0, 1, 2, 3],      # Milk shuffle variants (alternating top/bottom)
-    'cut': [0, 1, 2, 3]        # Two-card cut variants
+    'none': [0, 1, 2, 3],
+    'in':   [0, 1, 2, 3],
+    'out':  [0, 1, 2, 3],
+    'milk': [0, 1, 2, 3],
+    'cut':  [0, 1, 2, 3],
 }
 
-@njit
-def faro_shuffle(bits: np.ndarray, shuffle_type: str, steps: int, variant: int) -> np.ndarray:
-    """
-    Apply Faro shuffle to bit array using only reliable variants.
-    
-    Args:
-        bits: Input bit array
-        shuffle_type: Type of shuffle ('none', 'in', 'out', 'milk', 'cut')
-        steps: Number of shuffle steps to apply
-        variant: Shuffle variant (must be reliable for the shuffle type)
-        
-    Returns:
-        Shuffled bit array
-    """
-    result = bits.copy()
-    n = len(result)
-    
-    if n <= 1 or shuffle_type == 'none':
-        return result
-    
-    # Force variant to be reliable for the shuffle type
-    if shuffle_type == 'milk' or shuffle_type == 'cut':
-        variant = variant % 4  # Ensure valid variant number
-    else:
-        variant = variant % 4  # Ensure valid variant number
-    
-    for step in range(steps):
-        temp = result.copy()
-        mid = n // 2
-        
-        if shuffle_type == "in":
-            # In-shuffle variants
-            if variant == 0:  # Standard in-shuffle
-                even_positions = n - mid
-                odd_positions = mid
-                result[0::2] = temp[:even_positions]
-                result[1::2] = temp[even_positions:even_positions+odd_positions]
-            elif variant == 1:  # Reversed in-shuffle
-                even_positions = n - mid
-                odd_positions = mid
-                result[0::2] = temp[mid:mid+even_positions]
-                result[1::2] = temp[:odd_positions]
-            elif variant == 2:  # Offset in-shuffle
-                even_positions = n - mid
-                odd_positions = mid
-                result[1::2] = temp[:odd_positions]
-                result[0::2] = temp[odd_positions:odd_positions+even_positions]
-            elif variant == 3:  # Reverse offset in-shuffle
-                even_positions = n - mid
-                odd_positions = mid
-                result[1::2] = temp[even_positions:even_positions+odd_positions]
-                result[0::2] = temp[:even_positions]
-                
-        elif shuffle_type == "out":
-            # Out-shuffle variants
-            if variant == 0:  # Standard out-shuffle
-                result[:mid] = temp[0::2][:mid]
-                remaining = n - mid
-                result[mid:] = temp[1::2][:remaining]
-            elif variant == 1:  # Reversed out-shuffle
-                result[:mid] = temp[1::2][:mid]
-                remaining = n - mid
-                result[mid:] = temp[0::2][:remaining]
-            elif variant == 2:  # Offset out-shuffle
-                result[1::2] = temp[:mid]
-                result[0::2] = temp[mid:]
-            elif variant == 3:  # Reverse offset out-shuffle
-                result[0::2] = temp[mid:]
-                result[1::2] = temp[:mid]
-                
-        elif shuffle_type == "milk":
-            # Milk shuffle - alternate taking from top and bottom
-            if variant == 0:
-                # Standard milk: top, bottom, top, bottom...
-                for i in range(n):
-                    if i % 2 == 0:
-                        result[i] = temp[i // 2]  # Take from top half
-                    else:
-                        result[i] = temp[n - 1 - i // 2]  # Take from bottom half
-            elif variant == 1:
-                # Reverse milk: bottom, top, bottom, top...
-                for i in range(n):
-                    if i % 2 == 0:
-                        result[i] = temp[n - 1 - i // 2]  # Take from bottom half
-                    else:
-                        result[i] = temp[i // 2]  # Take from top half
-            elif variant == 2:
-                # Offset milk: start from position 1
-                for i in range(n):
-                    if (i + 1) % 2 == 0:
-                        result[i] = temp[i // 2]
-                    else:
-                        result[i] = temp[n - 1 - i // 2]
-            elif variant == 3:
-                # Reverse offset milk
-                for i in range(n):
-                    if (i + 1) % 2 == 0:
-                        result[i] = temp[n - 1 - i // 2]
-                    else:
-                        result[i] = temp[i // 2]
-                
-        elif shuffle_type == "cut":
-            # Two-card cut - move 2 cards from one position to another
-            cut_size = 2 if n > 2 else 1
-            if variant == 0:
-                # Cut from top, insert in middle
-                cut_pos = n // 2
-                result[:cut_pos] = temp[cut_size:cut_size + cut_pos]
-                result[cut_pos:cut_pos + cut_size] = temp[:cut_size]
-                result[cut_pos + cut_size:] = temp[cut_size + cut_pos:]
-            elif variant == 1:
-                # Cut from bottom, insert in middle
-                cut_pos = n // 2
-                result[:cut_pos - cut_size] = temp[:cut_pos - cut_size]
-                result[cut_pos - cut_size:cut_pos] = temp[n - cut_size:]
-                result[cut_pos:] = temp[cut_pos - cut_size:n - cut_size]
-            elif variant == 2:
-                # Cut from middle, move to top
-                cut_pos = n // 2
-                result[:cut_size] = temp[cut_pos:cut_pos + cut_size]
-                result[cut_size:cut_pos + cut_size] = temp[:cut_pos]
-                result[cut_pos + cut_size:] = temp[cut_pos + cut_size:]
-            elif variant == 3:
-                # Cut from middle, move to bottom
-                cut_pos = n // 2
-                result[:cut_pos] = temp[:cut_pos]
-                result[cut_pos:n - cut_size] = temp[cut_pos + cut_size:]
-                result[n - cut_size:] = temp[cut_pos:cut_pos + cut_size]
-    
+
+def shuffle(data: np.ndarray, shuffle_type: str, steps: int, variant: int) -> np.ndarray:
+    """Apply a faro shuffle `steps` times to a byte array."""
+    result = data.copy()
+    for _ in range(steps):
+        result = _shuffle_step(result, shuffle_type, variant % 4)
     return result
 
-@njit
-def inverse_faro_shuffle(bits: np.ndarray, shuffle_type: str, steps: int, variant: int) -> np.ndarray:
-    """
-    Apply inverse Faro shuffle to reverse the shuffle operation.
-    
-    Args:
-        bits: Input bit array (shuffled)
-        shuffle_type: Type of shuffle used ('none', 'in', 'out', 'milk', 'cut')
-        steps: Number of shuffle steps to reverse
-        variant: Shuffle variant used
-        
-    Returns:
-        Unshuffled bit array
-    """
-    result = bits.copy()
-    n = len(result)
-    
-    if n <= 1 or shuffle_type == 'none':
-        return result
-    
-    # Force variant to be reliable
-    if shuffle_type == 'milk' or shuffle_type == 'cut':
-        variant = variant % 4
-    else:
-        variant = variant % 4
-    
-    # Apply inverse shuffles in reverse order
-    for step in range(steps - 1, -1, -1):
-        temp = result.copy()
-        mid = n // 2
-        
-        if shuffle_type == "in":
-            if variant == 0:
-                even_positions = n - mid
-                odd_positions = mid
-                result[:even_positions] = temp[0::2]
-                result[even_positions:even_positions+odd_positions] = temp[1::2]
-            elif variant == 1:
-                even_positions = n - mid
-                odd_positions = mid
-                result[:odd_positions] = temp[1::2]
-                result[mid:mid+even_positions] = temp[0::2]
-            elif variant == 2:
-                even_positions = n - mid
-                odd_positions = mid
-                result[:odd_positions] = temp[1::2]
-                result[odd_positions:odd_positions+even_positions] = temp[0::2]
-            elif variant == 3:
-                even_positions = n - mid
-                odd_positions = mid
-                result[:even_positions] = temp[0::2]
-                result[even_positions:even_positions+odd_positions] = temp[1::2]
-                
-        elif shuffle_type == "out":
-            if variant == 0:
-                result[0::2] = temp[:mid]
-                result[1::2] = temp[mid:]
-            elif variant == 1:
-                result[1::2] = temp[:mid]
-                result[0::2] = temp[mid:]
-            elif variant == 2:
-                result[:mid] = temp[1::2]
-                result[mid:] = temp[0::2]
-            elif variant == 3:
-                result[mid:] = temp[0::2]
-                result[:mid] = temp[1::2]
-                
-        elif shuffle_type == "milk":
-            # Inverse milk shuffle - reverse the milk shuffle operation
-            if variant == 0:
-                # Inverse of standard milk
-                for i in range(n):
-                    if i % 2 == 0:
-                        result[i // 2] = temp[i]  # Put back to top half
-                    else:
-                        result[n - 1 - i // 2] = temp[i]  # Put back to bottom half
-            elif variant == 1:
-                # Inverse of reverse milk
-                for i in range(n):
-                    if i % 2 == 0:
-                        result[n - 1 - i // 2] = temp[i]  # Put back to bottom half
-                    else:
-                        result[i // 2] = temp[i]  # Put back to top half
-            elif variant == 2:
-                # Inverse of offset milk
-                for i in range(n):
-                    if (i + 1) % 2 == 0:
-                        result[i // 2] = temp[i]
-                    else:
-                        result[n - 1 - i // 2] = temp[i]
-            elif variant == 3:
-                # Inverse of reverse offset milk
-                for i in range(n):
-                    if (i + 1) % 2 == 0:
-                        result[n - 1 - i // 2] = temp[i]
-                    else:
-                        result[i // 2] = temp[i]
-                
-        elif shuffle_type == "cut":
-            # Inverse two-card cut - reverse the cut operation
-            cut_size = 2 if n > 2 else 1
-            if variant == 0:
-                # Inverse: move cards back from middle to top
-                cut_pos = n // 2
-                result[:cut_size] = temp[cut_pos:cut_pos + cut_size]
-                result[cut_size:cut_size + cut_pos] = temp[:cut_pos]
-                result[cut_size + cut_pos:] = temp[cut_pos + cut_size:]
-            elif variant == 1:
-                # Inverse: move cards back from middle to bottom
-                cut_pos = n // 2
-                result[:cut_pos - cut_size] = temp[:cut_pos - cut_size]
-                result[n - cut_size:] = temp[cut_pos - cut_size:cut_pos]
-                result[cut_pos - cut_size:n - cut_size] = temp[cut_pos:]
-            elif variant == 2:
-                # Inverse: move cards back from top to middle
-                cut_pos = n // 2
-                result[:cut_pos] = temp[cut_size:cut_pos + cut_size]
-                result[cut_pos:cut_pos + cut_size] = temp[:cut_size]
-                result[cut_pos + cut_size:] = temp[cut_pos + cut_size:]
-            elif variant == 3:
-                # Inverse: move cards back from bottom to middle
-                cut_pos = n // 2
-                result[:cut_pos] = temp[:cut_pos]
-                result[cut_pos:cut_pos + cut_size] = temp[n - cut_size:]
-                result[cut_pos + cut_size:] = temp[cut_pos:n - cut_size]
-    
+
+def inverse_shuffle(data: np.ndarray, shuffle_type: str, steps: int, variant: int) -> np.ndarray:
+    """Reverse a shuffle applied with the given parameters."""
+    result = data.copy()
+    for _ in range(steps):
+        result = _inverse_shuffle_step(result, shuffle_type, variant % 4)
     return result
 
-def get_reliable_variants(shuffle_type: str) -> list:
-    """Get list of reliable variants for a shuffle type"""
-    return RELIABLE_SHUFFLE_VARIANTS.get(shuffle_type, []) 
+
+# ---------------------------------------------------------------------------
+# Single-step forward shuffles
+# ---------------------------------------------------------------------------
+
+def _shuffle_step(data: np.ndarray, shuffle_type: str, variant: int) -> np.ndarray:
+    n = len(data)
+    if n <= 1 or shuffle_type == 'none':
+        return data.copy()
+
+    result = np.empty_like(data)
+    mid = n // 2
+
+    if shuffle_type == 'in':
+        # Interleave two halves: [a0..ak, b0..bk] -> [a0,b0,a1,b1,...]
+        first, second = data[:n - mid], data[n - mid:]
+        if variant == 0:
+            result[0::2] = first;  result[1::2] = second
+        elif variant == 1:
+            result[0::2] = second; result[1::2] = first
+        elif variant == 2:
+            result[1::2] = first;  result[0::2] = second
+        else:  # variant == 3
+            result[1::2] = second; result[0::2] = first
+
+    elif shuffle_type == 'out':
+        # De-interleave: [a0,b0,a1,b1,...] -> [a0,a1,..., b0,b1,...]
+        if variant == 0:
+            result[:n - mid] = data[0::2]; result[n - mid:] = data[1::2]
+        elif variant == 1:
+            result[:mid] = data[1::2][:mid]; result[mid:] = data[0::2][:n - mid]
+        elif variant == 2:
+            result[1::2] = data[:mid]; result[0::2] = data[mid:]
+        else:  # variant == 3
+            result[0::2] = data[mid:]; result[1::2] = data[:mid]
+
+    elif shuffle_type == 'milk':
+        # Alternate taking bytes from the top and bottom halves.
+        idx = np.arange(n)
+        even = idx % 2 == 0
+        if variant == 0:
+            result[even]  = data[idx[even] // 2]
+            result[~even] = data[n - 1 - idx[~even] // 2]
+        elif variant == 1:
+            result[even]  = data[n - 1 - idx[even] // 2]
+            result[~even] = data[idx[~even] // 2]
+        elif variant == 2:
+            shifted = (idx + 1) % 2 == 0
+            result[shifted]  = data[idx[shifted] // 2]
+            result[~shifted] = data[n - 1 - idx[~shifted] // 2]
+        else:  # variant == 3
+            shifted = (idx + 1) % 2 == 0
+            result[shifted]  = data[n - 1 - idx[shifted] // 2]
+            result[~shifted] = data[idx[~shifted] // 2]
+
+    elif shuffle_type == 'cut':
+        # Move two bytes from one position to another.
+        cut = 2 if n > 2 else 1
+        half = n // 2
+        if variant == 0:  # cut from top, insert at middle
+            result[:half]             = data[cut:cut + half]
+            result[half:half + cut]   = data[:cut]
+            result[half + cut:]       = data[cut + half:]
+        elif variant == 1:  # cut from bottom, insert at middle
+            result[:half - cut]       = data[:half - cut]
+            result[half - cut:half]   = data[n - cut:]
+            result[half:]             = data[half - cut:n - cut]
+        elif variant == 2:  # cut from middle, move to top
+            result[:cut]              = data[half:half + cut]
+            result[cut:cut + half]    = data[:half]
+            result[cut + half:]       = data[half + cut:]
+        else:  # variant == 3 — cut from middle, move to bottom
+            result[:half]             = data[:half]
+            result[half:n - cut]      = data[half + cut:]
+            result[n - cut:]          = data[half:half + cut]
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Single-step inverse shuffles
+# ---------------------------------------------------------------------------
+
+def _inverse_shuffle_step(data: np.ndarray, shuffle_type: str, variant: int) -> np.ndarray:
+    n = len(data)
+    if n <= 1 or shuffle_type == 'none':
+        return data.copy()
+
+    result = np.empty_like(data)
+    mid = n // 2
+
+    if shuffle_type == 'in':
+        first_len = n - mid
+        if variant == 0:
+            result[:first_len] = data[0::2]; result[first_len:] = data[1::2]
+        elif variant == 1:
+            result[:mid] = data[1::2]; result[mid:] = data[0::2]
+        elif variant == 2:
+            result[:mid] = data[1::2]; result[mid:] = data[0::2]
+        else:  # variant == 3
+            result[:first_len] = data[0::2]; result[first_len:] = data[1::2]
+
+    elif shuffle_type == 'out':
+        first_len = n - mid
+        if variant == 0:
+            result[0::2] = data[:first_len]; result[1::2] = data[first_len:]
+        elif variant == 1:
+            result[1::2] = data[:mid]; result[0::2] = data[mid:]
+        elif variant == 2:
+            result[:mid] = data[1::2]; result[mid:] = data[0::2]
+        else:  # variant == 3
+            result[mid:] = data[0::2]; result[:mid] = data[1::2]
+
+    elif shuffle_type == 'milk':
+        idx = np.arange(n)
+        even = idx % 2 == 0
+        if variant == 0:
+            result[idx[even] // 2]          = data[even]
+            result[n - 1 - idx[~even] // 2] = data[~even]
+        elif variant == 1:
+            result[n - 1 - idx[even] // 2]  = data[even]
+            result[idx[~even] // 2]          = data[~even]
+        elif variant == 2:
+            shifted = (idx + 1) % 2 == 0
+            result[idx[shifted] // 2]           = data[shifted]
+            result[n - 1 - idx[~shifted] // 2]  = data[~shifted]
+        else:  # variant == 3
+            shifted = (idx + 1) % 2 == 0
+            result[n - 1 - idx[shifted] // 2]   = data[shifted]
+            result[idx[~shifted] // 2]           = data[~shifted]
+
+    elif shuffle_type == 'cut':
+        cut = 2 if n > 2 else 1
+        half = n // 2
+        if variant == 0:
+            result[:cut]           = data[half:half + cut]
+            result[cut:cut + half] = data[:half]
+            result[cut + half:]    = data[half + cut:]
+        elif variant == 1:
+            result[:half - cut]    = data[:half - cut]
+            result[n - cut:]       = data[half - cut:half]
+            result[half - cut:n - cut] = data[half:]
+        elif variant == 2:
+            result[:half]          = data[cut:cut + half]
+            result[half:half + cut] = data[:cut]
+            result[half + cut:]    = data[cut + half:]
+        else:  # variant == 3
+            result[:half]          = data[:half]
+            result[half:half + cut] = data[n - cut:]
+            result[half + cut:]    = data[half:n - cut]
+
+    return result
