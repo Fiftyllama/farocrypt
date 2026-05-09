@@ -1,433 +1,270 @@
-# 📚 Faro Cipher API Documentation
+# Faro Cipher — Python API Reference
 
-Complete API reference for the Faro Cipher encryption system.
-
-**License**: WTFPL v2 - Do whatever you want with this code!
-
-## 🚀 Quick Start
+## Package imports
 
 ```python
-from faro_cipher import FaroCipher, UltraFaroCipher
-
-# Standard cipher
-cipher = FaroCipher(key=b"your-secret-key", profile="balanced")
-
-# Ultra-optimized cipher (recommended)
-ultra_cipher = UltraFaroCipher(key=b"your-secret-key", profile="balanced")
-```
-
-## 📦 Package Structure
-
-```python
-from faro_cipher import (
-    FaroCipher,           # Standard implementation
-    UltraFaroCipher,      # Ultra-optimized implementation  
-    EncryptionMetadata,   # Metadata class
-    SecurityProfile       # Security configuration
-)
+from faro_cipher import FaroCipher, EncryptionMetadata, SecurityProfile
+from faro_cipher import generate_key_fingerprint, verify_key_compatibility
 ```
 
 ---
 
-## 🔧 Core API
+## FaroCipher
 
-### FaroCipher Class
+`faro_cipher.core.FaroCipher`
 
-**File**: `faro_cipher/core.py`
+The single cipher class. Constructs a deterministic round structure from the supplied key and provides encrypt/decrypt for both in-memory data and files.
 
-The standard Faro Cipher implementation with reliable shuffle variants and transform operations.
-
-#### Constructor
+### Constructor
 
 ```python
-cipher = FaroCipher(
-    key: bytes,
-    profile: str = "balanced", 
-    chunk_size: int = 8192,
-    rounds: Optional[int] = None
-)
-```
-
-**Parameters**:
-- `key` (bytes): Encryption key
-- `profile` (str): Security profile - "performance", "balanced", or "maximum"
-- `chunk_size` (int): Chunk size for processing (default: 8192)
-- `rounds` (Optional[int]): Override profile rounds (1-100)
-
-**Security Profiles**:
-- **"performance"**: 3 rounds, fast encryption for non-sensitive data
-- **"balanced"**: 6 rounds, good balance of security and speed ⭐ *Recommended*
-- **"maximum"**: 12 rounds, maximum security for sensitive data
-
-**Example**:
-```python
-# Balanced security (recommended)
-cipher = FaroCipher(key=b"my-secret-key", profile="balanced")
-
-# Custom configuration  
-cipher = FaroCipher(key=b"my-key", profile="performance", rounds=5, chunk_size=4096)
-```
-
-#### Methods
-
-##### `encrypt(data: Union[bytes, str]) -> Dict[str, Any]`
-
-Encrypts data using the Faro cipher algorithm.
-
-**Parameters**:
-- `data` (bytes or str): Data to encrypt
-
-**Returns**:
-- `dict`: Dictionary containing:
-  - `encrypted_data` (bytes): Encrypted binary data
-  - `metadata` (EncryptionMetadata): Encryption metadata
-
-**Example**:
-```python
-message = "Hello, World!"
-result = cipher.encrypt(message)
-encrypted_data = result['encrypted_data']
-metadata = result['metadata']
-```
-
-##### `decrypt(encrypted_result: Dict[str, Any]) -> bytes`
-
-Decrypts data using the Faro cipher algorithm.
-
-**Parameters**:
-- `encrypted_result` (dict): Result from encrypt() method
-
-**Returns**:
-- `bytes`: Decrypted data
-
-**Example**:
-```python
-decrypted_data = cipher.decrypt(result)
-message = decrypted_data.decode('utf-8')
-```
-
-##### `encrypt_file(input_file: str, output_file: str) -> EncryptionMetadata`
-
-Encrypts a file using variable chunk sizes.
-
-**Parameters**:
-- `input_file` (str): Path to input file
-- `output_file` (str): Path to output encrypted file
-
-**Returns**:
-- `EncryptionMetadata`: File encryption metadata
-
-**Example**:
-```python
-metadata = cipher.encrypt_file("document.txt", "document.enc")
-```
-
-##### `decrypt_file(input_file: str, output_file: str, metadata: EncryptionMetadata) -> bool`
-
-Decrypts a file.
-
-**Parameters**:
-- `input_file` (str): Path to encrypted file
-- `output_file` (str): Path to output decrypted file  
-- `metadata` (EncryptionMetadata): Encryption metadata
-
-**Returns**:
-- `bool`: True if successful, False otherwise
-
-**Example**:
-```python
-success = cipher.decrypt_file("document.enc", "document_restored.txt", metadata)
-```
-
-##### `get_info() -> Dict[str, Any]`
-
-Get cipher configuration information.
-
-**Returns**:
-- `dict`: Configuration details including profile, rounds, key fingerprint, etc.
-
----
-
-## 🚀 Ultra-Optimized API
-
-### UltraFaroCipher Class
-
-**File**: `faro_cipher/ultra_cipher.py`
-
-Ultra-high performance implementation with algorithmic optimizations.
-
-**Performance Improvements**:
-- 5-25x faster encryption/decryption
-- 5x memory efficiency through virtual padding
-- Cache-optimized processing for large data
-- Streaming file processing without memory explosion
-
-#### Constructor
-
-```python
-ultra_cipher = UltraFaroCipher(
+FaroCipher(
     key: bytes,
     profile: str = "balanced",
-    chunk_size: int = 8192, 
-    rounds: Optional[int] = None,
-    cache_optimize: bool = True
+    rounds: int | None = None,
 )
 ```
 
-**Additional Parameters**:
-- `cache_optimize` (bool): Enable cache optimization for large data (default: True)
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `key` | `bytes` | Encryption key (any length). |
+| `profile` | `str` | `"performance"`, `"balanced"` (default), or `"maximum"`. |
+| `rounds` | `int \| None` | Override the profile's round count (1–100). Sets `profile` to `"custom-N"`. |
 
-**Example**:
+Raises `ValueError` for unknown profiles or out-of-range round counts.
+
+### Attributes
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `profile` | `str` | Active profile name. |
+| `rounds` | `int` | Number of encryption rounds. |
+| `key_fingerprint` | `str` | 16-character hex fingerprint of the key. |
+| `round_structure` | `list[dict]` | Full round configuration (see below). |
+| `chunk_size` | `int` | Always `65536` — the maximum chunk size used internally. |
+
+Each entry in `round_structure` contains:
+
 ```python
-# Ultra cipher with cache optimization
-ultra_cipher = UltraFaroCipher(key=b"secret-key", profile="balanced")
-
-# Disable cache optimization for small data
-ultra_cipher = UltraFaroCipher(key=b"secret-key", cache_optimize=False)
+{
+    'shuffle_type':     str,   # 'none' | 'in' | 'out' | 'milk' | 'cut'
+    'shuffle_variant':  int,   # 0–3
+    'shuffle_steps':    int,   # 1–4
+    'transform_type':   str,   # one of the seven transform names
+    'transform_key':    int,   # derived from key material
+    'round_chunk_size': int,   # power-of-2 chunk size for this round
+}
 ```
-
-#### Enhanced Methods
-
-All methods from `FaroCipher` plus:
-
-##### `encrypt_file_ultra(input_file: str, output_file: str, chunk_size: int = 1024*1024, progress: bool = True) -> EncryptionMetadata`
-
-Ultra-optimized streaming file encryption.
-
-**Parameters**:
-- `input_file` (str): Path to input file
-- `output_file` (str): Path to output encrypted file
-- `chunk_size` (int): Processing chunk size (default: 1MB)
-- `progress` (bool): Show progress indicators (default: True)
-
-**Returns**:
-- `EncryptionMetadata`: Enhanced metadata with streaming information
-
-**Example**:
-```python
-# Encrypt large file with progress
-metadata = ultra_cipher.encrypt_file_ultra(
-    "large_video.mp4", 
-    "large_video.enc",
-    chunk_size=2*1024*1024,  # 2MB chunks
-    progress=True
-)
-```
-
-##### `benchmark_ultra_vs_others(data_size: int = 1024*1024) -> Dict[str, float]`
-
-Comprehensive performance benchmark.
-
-**Parameters**:
-- `data_size` (int): Test data size in bytes (default: 1MB)
-
-**Returns**:
-- `dict`: Throughput results for different implementations
-
-**Example**:
-```python
-results = ultra_cipher.benchmark_ultra_vs_others(data_size=10*1024*1024)
-print(f"Ultra throughput: {results['ultra']:.1f} MB/s")
-```
-
-##### `get_optimization_info() -> Dict[str, Any]`
-
-Get detailed optimization information.
-
-**Returns**:
-- `dict`: Optimization details and expected performance improvements
 
 ---
 
-## 📊 Metadata Classes
+### `encrypt(data)`
 
-### EncryptionMetadata
+```python
+result = cipher.encrypt(data: bytes | str) -> dict
+```
 
-**File**: `faro_cipher/core.py`
+Returns a dictionary:
 
-Stores encryption metadata for decryption and verification.
+```python
+{
+    'encrypted_data': bytes,
+    'metadata':       EncryptionMetadata,
+}
+```
+
+String input is UTF-8 encoded automatically. The encrypted bytes are always longer than the input (padded to a multiple of 65536 bytes); `metadata.original_size` records the true input length for trimming on decryption.
+
+### `decrypt(encrypted_result)`
+
+```python
+plaintext = cipher.decrypt(encrypted_result: dict) -> bytes
+```
+
+Accepts the dict returned by `encrypt()`. Raises `ValueError` if the key fingerprint does not match the metadata.
+
+---
+
+### `encrypt_file(input_path, output_path)`
+
+```python
+metadata = cipher.encrypt_file(input_path: str, output_path: str) -> EncryptionMetadata
+```
+
+Reads `input_path` in 65536-byte blocks, encrypts each block, and writes the result to `output_path`. Each block is preceded by a 4-byte big-endian length header.
+
+Returns `EncryptionMetadata` — **save this**; it is required for decryption.
+
+### `decrypt_file(input_path, output_path, metadata)`
+
+```python
+ok = cipher.decrypt_file(
+    input_path: str,
+    output_path: str,
+    metadata: EncryptionMetadata,
+) -> bool
+```
+
+Returns `True` on success, `False` on failure (also prints an error message).
+
+---
+
+### `get_info()`
+
+```python
+info = cipher.get_info() -> dict
+```
+
+Returns a summary dict:
+
+```python
+{
+    'profile':                   str,
+    'description':               str,
+    'rounds':                    int,
+    'chunk_size':                int,
+    'key_fingerprint':           str,
+    'shuffle_types_available':   list[str],
+    'transforms_available':      list[str],
+}
+```
+
+---
+
+## EncryptionMetadata
+
+`faro_cipher.core.EncryptionMetadata` (dataclass)
+
+Holds everything needed to decrypt a ciphertext. You are responsible for persisting this alongside the encrypted data.
 
 ```python
 @dataclass
 class EncryptionMetadata:
-    version: str
-    profile: str
-    rounds: int
-    chunk_size: int
-    round_structure: List[Dict[str, Any]]
+    version:         str
+    profile:         str
+    rounds:          int
+    chunk_size:      int
+    round_structure: list[dict]     # empty [] when loaded from JSON
     key_fingerprint: str
-    original_size: Optional[int] = None
-    chunk_sizes: Optional[List[int]] = None
+    original_size:   int | None     # set for in-memory encrypt()
+    chunk_sizes:     list[int] | None  # set for encrypt_file()
 ```
 
-**Attributes**:
-- `version`: Cipher version identifier
-- `profile`: Security profile used
-- `rounds`: Number of encryption rounds
-- `chunk_size`: Processing chunk size
-- `round_structure`: Detailed round configuration
-- `key_fingerprint`: Key verification fingerprint
-- `original_size`: Original data size (for trimming)
-- `chunk_sizes`: Chunk sizes for file encryption
-
-### SecurityProfile
-
-**File**: `faro_cipher/core.py`
-
-Static methods for security profile configurations.
-
-```python
-SecurityProfile.performance()  # Returns performance config
-SecurityProfile.balanced()     # Returns balanced config  
-SecurityProfile.maximum()      # Returns maximum config
-```
+When serialising to JSON for file encryption, the round structure is not stored (it is regenerated from the key). Store at minimum: `version`, `profile`, `rounds`, `chunk_size`, `key_fingerprint`, `chunk_sizes`.
 
 ---
 
-## 🎯 Algorithm Details
+## SecurityProfile
 
-### Shuffle Variants
+`faro_cipher.core.SecurityProfile`
 
-The cipher uses **14 reliable shuffle variants** across 4 types:
+Access the preset configurations:
 
-- **None**: 4 variants (no shuffle, identity operations)
-- **In**: 4 variants (in-shuffle variations)  
-- **Out**: 4 variants (out-shuffle variations)
-- **Milk**: 2 variants (milk-shuffle operations)
-- **Cut**: 2 variants (cut-shuffle operations)
+```python
+SecurityProfile.get("performance")  # -> dict
+SecurityProfile.get("balanced")
+SecurityProfile.get("maximum")
+```
 
-### Transform Functions
-
-- **Enhanced XOR**: Key-dependent bit flipping patterns
-- **Fibonacci**: Fibonacci sequence-based transformations
-- **Avalanche Cascade**: High diffusion for security
-- **Prime Sieve**: Prime number-based bit operations
-- **Invert**: Bit inversion operations
-- **Swap Pairs**: Adjacent bit pair swapping
-- **Bit Flip**: Controlled bit flipping
-
-All transforms are **self-inverse** (applying twice returns original data).
-
-### Round Structure
-
-Each round applies:
-1. **Shuffle operation** with configurable steps and variants
-2. **Transform operation** with key-derived parameters
-3. **Variable chunk processing** for optimal diffusion
+Each dict contains `rounds`, `emphasis` (list of transform names emphasised in early rounds), and `description`.
 
 ---
 
-## 🔒 Security Features
+## Utility functions
 
-### Key Derivation
-- **PBKDF2** with SHA256 
-- Variable iterations (10,000 + rounds × 1,000)
-- Salt: "FaroCipherEntropy2024"
+### `generate_key_fingerprint(key)`
 
-### Key Fingerprinting
 ```python
-fingerprint = generate_key_fingerprint(key)  # 16-character hex
-verify_key_compatibility(key, fingerprint)   # Returns bool
+fingerprint = generate_key_fingerprint(key: bytes) -> str
 ```
 
-### Entropy Optimization
-- **Round entropy scoring** based on shuffle and transform complexity
-- **Multi-scale diffusion** with variable chunk sizes
-- **Balanced operation distribution** across rounds
+Returns the first 16 hex characters of `md5(key)`. Used internally by `FaroCipher`.
+
+### `verify_key_compatibility(key, fingerprint)`
+
+```python
+ok = verify_key_compatibility(key: bytes, fingerprint: str) -> bool
+```
+
+Returns `True` if `generate_key_fingerprint(key) == fingerprint`.
 
 ---
 
-## ⚡ Performance Tips
+## Examples
 
-### Standard Implementation
-- Use `chunk_size=4096` for small files
-- Use `chunk_size=16384` for large files
-- Choose appropriate security profile
+### In-memory round-trip
 
-### Ultra Implementation  
-- Enable `cache_optimize=True` for files > 64KB
-- Use `encrypt_file_ultra()` for large files
-- Monitor memory usage with progress indicators
-
-### Benchmarking
 ```python
-# Quick benchmark
-results = ultra_cipher.benchmark_ultra_vs_others(1024*1024)
+from faro_cipher import FaroCipher
 
-# Detailed optimization analysis
-ultra_cipher.analyze_optimization_impact(1024*1024)
+cipher = FaroCipher(key=b"secret", profile="balanced")
+
+result    = cipher.encrypt(b"Hello, world!")
+plaintext = cipher.decrypt(result)
+
+assert plaintext == b"Hello, world!"
 ```
 
----
-
-## 🚨 Error Handling
-
-### Common Exceptions
+### File encryption with JSON metadata
 
 ```python
-# Key mismatch during decryption
-ValueError("Key fingerprint mismatch - wrong key or corrupted metadata")
+import json
+from faro_cipher import FaroCipher
+from faro_cipher.core import EncryptionMetadata
 
-# Invalid configuration
-ValueError("Rounds must be at least 1")
-ValueError("Maximum 100 rounds supported")
-ValueError("Unknown profile: invalid_profile")
+cipher = FaroCipher(key=b"secret", profile="balanced")
 
-# File operations
-FileNotFoundError  # Missing input files
-PermissionError    # File access issues
+# Encrypt
+metadata = cipher.encrypt_file("report.pdf", "report.enc")
+
+meta_dict = {
+    "version":         metadata.version,
+    "profile":         metadata.profile,
+    "rounds":          metadata.rounds,
+    "chunk_size":      metadata.chunk_size,
+    "key_fingerprint": metadata.key_fingerprint,
+    "chunk_sizes":     metadata.chunk_sizes,
+}
+with open("report.enc.meta", "w") as f:
+    json.dump(meta_dict, f)
+
+# Decrypt (later, possibly in a different process)
+with open("report.enc.meta") as f:
+    m = json.load(f)
+
+meta = EncryptionMetadata(
+    version=m["version"],
+    profile=m["profile"],
+    rounds=m["rounds"],
+    chunk_size=m["chunk_size"],
+    round_structure=[],
+    key_fingerprint=m["key_fingerprint"],
+    chunk_sizes=m["chunk_sizes"],
+)
+
+ok = cipher.decrypt_file("report.enc", "report_restored.pdf", meta)
+assert ok
 ```
 
-### Best Practices
+### Custom round count
 
 ```python
+cipher = FaroCipher(key=b"secret", rounds=9)
+# cipher.profile == "custom-9"
+```
+
+### Error handling
+
+```python
+from faro_cipher import FaroCipher
+
+cipher_a = FaroCipher(key=b"correct-key", profile="balanced")
+cipher_b = FaroCipher(key=b"wrong-key",   profile="balanced")
+
+result = cipher_a.encrypt(b"sensitive data")
+
 try:
-    # Always verify decryption success
-    decrypted_data = cipher.decrypt(encrypted_result)
-    
-    # Verify file operations
-    if not cipher.decrypt_file(input_file, output_file, metadata):
-        print("Decryption failed!")
-        
-except ValueError as e:
-    print(f"Cipher error: {e}")
-except Exception as e:
-    print(f"Unexpected error: {e}")
+    cipher_b.decrypt(result)          # raises ValueError
+except ValueError as exc:
+    print(exc)                        # Key fingerprint mismatch
 ```
-
----
-
-## 🧪 Testing
-
-### Basic Functionality Test
-```python
-# Round-trip test
-original_data = b"Test message"
-encrypted_result = cipher.encrypt(original_data)
-decrypted_data = cipher.decrypt(encrypted_result)
-assert decrypted_data == original_data
-```
-
-### Performance Test
-```python
-import time
-
-data = os.urandom(1024*1024)  # 1MB test data
-start_time = time.perf_counter()
-encrypted_result = cipher.encrypt(data)
-decrypted_data = cipher.decrypt(encrypted_result)
-elapsed = time.perf_counter() - start_time
-
-throughput = (len(data) * 2) / (1024 * 1024 * elapsed)
-print(f"Throughput: {throughput:.1f} MB/s")
-```
-
----
-
-## 📝 Examples
-
-See the project's `examples/` directory and `test_release.py` for comprehensive usage examples.
-
-**API Version**: 1.0.0  
-**Last Updated**: 2024  
-**License**: WTFPL v2 

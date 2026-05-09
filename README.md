@@ -1,206 +1,138 @@
-# Warning, vibecoded slop
+# Faro Cipher
 
-# Faro Cipher - High-Performance File Encryption
+A symmetric encryption system built on [Faro card shuffles](https://en.wikipedia.org/wiki/Faro_shuffle) combined with self-inverse byte transforms. Written as a research and learning project.
 
-A high-performance file encryption system based on the Faro shuffle (card shuffling technique) applied to bit arrays. Built for algorithmic performance optimization and cryptographic research.
+> **Disclaimer**: This cipher has not undergone formal cryptographic review. It is suitable for learning, experimentation, and non-sensitive data obfuscation — not for protecting secrets that matter.
 
-## 🚀 Quick Start
+---
 
-### Installation
+## Installation
 
 ```bash
-# Clone the repository
-git clone https://github.com/your-username/faro-cipher.git
-cd faro-cipher
-
-# Install dependencies
+git clone https://github.com/Fiftyllama/farocrypt.git
+cd farocrypt
 pip install -r requirements.txt
-
-# Install the package
 pip install -e .
 ```
 
-### Basic Usage
+**Requirements**: Python 3.8+, NumPy.
+
+---
+
+## Quick start
 
 ```python
 from faro_cipher import FaroCipher
 
-# Create cipher with your secret key
-cipher = FaroCipher(key=b"your-secret-key", profile="balanced")
+cipher = FaroCipher(key=b"my-secret-key", profile="balanced")
 
-# Encrypt data
-message = "Hello, Faro Cipher! This is a secret message."
-encrypted_result = cipher.encrypt(message)
+# Encrypt
+result = cipher.encrypt("Hello, world!")
 
-# Decrypt data
-decrypted_data = cipher.decrypt(encrypted_result)
-print(decrypted_data.decode('utf-8'))  # "Hello, Faro Cipher! This is a secret message."
+# Decrypt
+plaintext = cipher.decrypt(result)
+print(plaintext.decode())   # Hello, world!
 ```
 
-### File Encryption
+### File encryption
 
 ```python
-# Encrypt a file
-metadata = cipher.encrypt_file("document.txt", "document.encrypted")
-
-# Decrypt the file
-success = cipher.decrypt_file("document.encrypted", "document_restored.txt", metadata)
+metadata = cipher.encrypt_file("document.pdf", "document.enc")
+cipher.decrypt_file("document.enc", "document_restored.pdf", metadata)
 ```
 
-## 🛡️ Security Profiles
+---
 
-Choose the right profile for your needs:
+## Security profiles
 
-- **Performance**: 3 rounds, fast encryption for non-sensitive data
-- **Balanced**: 6 rounds, good balance of security and speed ⭐ *Recommended*
-- **Maximum**: 12 rounds, maximum security for sensitive data
+| Profile | Rounds | Description |
+|---------|--------|-------------|
+| `performance` | 3 | Fast, for non-sensitive data |
+| `balanced` | 6 | Recommended default |
+| `maximum` | 12 | Slower, higher diffusion |
+
+You can also supply a custom round count:
 
 ```python
-# Different security levels
-fast_cipher = FaroCipher(key=b"key", profile="performance")
-balanced_cipher = FaroCipher(key=b"key", profile="balanced")  
-secure_cipher = FaroCipher(key=b"key", profile="maximum")
+cipher = FaroCipher(key=b"key", rounds=8)
 ```
 
-## 🔧 Features
+---
 
-### ✅ Reliable Shuffle Variants
-- **14 reliable shuffle variants** discovered through comprehensive testing
-- Only uses verified shuffle algorithms (excludes problematic double shuffle variants 1, 3)
-- **None**: 4 variants | **In**: 4 variants | **Out**: 4 variants | **Double**: 2 variants
-
-### 🎯 Advanced Transforms
-- **Enhanced XOR**: Key-dependent bit flipping patterns
-- **Fibonacci**: Fibonacci sequence-based transformations
-- **Avalanche Cascade**: High diffusion for security
-- **Prime Sieve**: Prime number-based bit operations
-- All transforms are **self-inverse** (applying twice returns original data)
-
-### 🚀 Performance Optimized
-- **Numba JIT compilation** for maximum speed
-- **Chunked processing** for large files
-- **Configurable chunk sizes** for different use cases
-- **Memory efficient** streaming operations
-
-### 🔒 Security Features
-- **PBKDF2 key derivation** with variable iterations
-- **Key fingerprinting** for metadata verification
-- **Perfect round-trip encryption** (no data loss)
-- **Deterministic structure generation** from keys
-
-## 📋 Examples
-
-Run the included examples to see Faro Cipher in action:
+## CLI — Cliopatra
 
 ```bash
-# Basic usage examples
-python examples/basic_usage.py
+# Encrypt text
+python cliopatra.py encrypt-text -k mysecret -t "Hello, world!"
 
-# File encryption examples
-python examples/file_encryption.py
+# Save encrypted text to a file
+python cliopatra.py encrypt-text -k mysecret -t "Hello" -o hello.json
+
+# Decrypt it
+python cliopatra.py decrypt-text -k mysecret -i hello.json
+
+# Encrypt / decrypt a file
+python cliopatra.py encrypt-file -k mysecret -i doc.pdf -o doc.enc
+python cliopatra.py decrypt-file -k mysecret -i doc.enc -o doc.pdf
+
+# Show round structure
+python cliopatra.py info -k mysecret
+
+# Benchmark
+python cliopatra.py benchmark -k mysecret --profile balanced
 ```
 
-## 🧪 Testing
+See [docs/CLI.md](docs/CLI.md) for the full option reference.
 
-Run the test suite to verify everything works correctly:
+---
+
+## How it works
+
+Each encryption round applies two operations to fixed-size chunks of the data:
+
+1. **Transform** — a self-inverse byte-level function (XOR 0xFF on selected bytes). Seven transforms are available: `enhanced_xor`, `fibonacci`, `avalanche_cascade`, `prime_sieve`, `invert`, `swap_pairs`, `bit_flip`.
+
+2. **Shuffle** — a byte-level Faro shuffle rearranges the chunk. Five shuffle types are available (`in`, `out`, `milk`, `cut`, `none`), each with four variants, applied one or more times.
+
+The round structure (which transform, which shuffle, how many steps, which chunk size) is generated deterministically from the key via PBKDF2-HMAC-SHA256. Decryption applies the same operations in reverse order — the transforms are self-inverse, so no separate inverse transform is needed.
+
+See [docs/ALGORITHM.md](docs/ALGORITHM.md) for the full specification.
+
+---
+
+## Project structure
+
+```
+farocrypt/
+├── faro_cipher/
+│   ├── __init__.py      # Public exports
+│   ├── core.py          # FaroCipher class and round structure generation
+│   ├── shuffles.py      # Byte-level shuffle and inverse-shuffle functions
+│   ├── transforms.py    # Self-inverse byte-level transform functions
+│   └── utils.py         # Key fingerprinting helpers
+├── docs/
+│   ├── ALGORITHM.md     # Algorithm specification
+│   ├── API.md           # Python API reference
+│   ├── CLI.md           # Cliopatra CLI reference
+│   └── PERFORMANCE.md   # Performance notes
+├── examples/            # Runnable usage examples
+├── tests/               # Test suite (unittest)
+├── cliopatra.py         # CLI entry point
+├── requirements.txt
+└── setup.py
+```
+
+---
+
+## Running tests
 
 ```bash
-# Run all tests
-python -m pytest tests/
-
-# Run specific test file
-python tests/test_core.py
+python -m unittest discover tests/ -v -p "*.py"
 ```
 
-## 📊 Project Structure
+---
 
-```
-faro-cipher/
-├── faro_cipher/           # Main package
-│   ├── __init__.py        # Package exports
-│   ├── core.py            # Main FaroCipher class
-│   ├── shuffles.py        # Shuffle algorithms
-│   ├── transforms.py      # Transform functions
-│   ├── utils.py           # Utility functions
-│   └── legacy.py          # Legacy implementation info
-├── examples/              # Usage examples
-│   ├── basic_usage.py     # Basic encryption examples
-│   └── file_encryption.py # File encryption examples
-├── tests/                 # Test suite
-│   └── test_core.py       # Core functionality tests
-├── docs/                  # Documentation
-├── archive/               # Historical implementations
-├── setup.py               # Package installation
-├── requirements.txt       # Dependencies
-└── README.md              # This file
-```
+## License
 
-## 🔍 Research & Development
-
-This project emerged from extensive research into shuffle algorithms and cryptographic properties:
-
-### Key Discoveries
-1. **Shuffle Reliability**: Only 14 out of 16 shuffle variants are reliable
-2. **Data Flow Issues**: Fixed critical data corruption from improper trimming
-3. **Transform-Driven Security**: Security comes primarily from transforms, not shuffles
-4. **Performance vs Security**: Identified optimal trade-offs for different use cases
-
-### Security Analysis
-- **Avalanche Effect**: Measures how single-bit changes affect output
-- **Key Sensitivity**: Ensures different keys produce different results  
-- **Round Scaling**: More rounds generally improve security
-- **Comprehensive Testing**: All operations verified through extensive testing
-
-## ⚠️ Security Disclaimer
-
-**For Educational and Research Purposes**: This cipher is designed for learning about encryption algorithms and performance optimization. While it implements sound cryptographic principles, it has not undergone formal security review. 
-
-**Not recommended for production security applications** without professional cryptographic audit.
-
-## 🛠️ Development
-
-### Contributing
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests for new functionality
-5. Submit a pull request
-
-### Requirements
-- Python 3.8+
-- NumPy for array operations
-- Numba for JIT compilation (optional, but recommended for performance)
-
-## 📜 License
-
-**WTFPL v2** - Do whatever you want with this code!
-
-*"Do whatever you want. Copy it on physical media and burn it, change it and use it to take over the world, break it with hammers, fix it so you can arrest people, sell it for drugs, use it to arrest people with hammers, it's your problem now. Don't blame me if it sets your cat on fire."*
-
-See the [LICENSE](LICENSE) file for full details, or visit http://www.wtfpl.net/
-
-SPDX-License-Identifier: WTFPL
-
-## 🎯 Use Cases
-
-### ✅ Great For:
-- **Learning cryptography** and algorithm design
-- **Performance research** and optimization studies
-- **Non-sensitive data obfuscation**
-- **Algorithm prototyping** and experimentation
-
-### ❌ Not Suitable For:
-- Production security applications (without audit)
-- Highly sensitive data protection
-- Compliance with cryptographic standards
-- Mission-critical security requirements
-
-## 🚀 Performance
-
-Benchmarks on typical hardware:
-- **Performance Profile**: ~0.9 MB/s, 3 rounds
-- **Balanced Profile**: ~0.7 MB/s, 6 rounds  
-- **Maximum Profile**: ~0.4 MB/s, 12 rounds
-
-*Performance varies based on hardware and data characteristics*
-
+**WTFPL v2** — do whatever you want with this code.
+See [LICENSE](LICENSE) or http://www.wtfpl.net/
