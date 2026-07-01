@@ -106,6 +106,7 @@ class FaroCipher:
 
         self.round_structure = self._build_round_structure()
         self.chunk_size = _MAX_CHUNK_SIZE  # exposed for metadata compatibility
+        self._perm_cache: Dict[Any, np.ndarray] = {}
 
         log.debug(
             "FaroCipher initialised: profile=%s rounds=%d key=%s",
@@ -225,28 +226,28 @@ class FaroCipher:
         for r in rounds:
             chunk_size = r['round_chunk_size']
             n_chunks = len(arr) // chunk_size
-            chunk_rng = np.random.RandomState(r['round_seed'] ^ 0xC0FFEE)
-            perm = chunk_rng.permutation(n_chunks)
+            # All chunks in a round share the same shuffle/transform parameters,
+            # so reshape into (n_chunks, chunk_size) and process every chunk in
+            # one vectorized call instead of looping chunk by chunk in Python.
+            mat = arr.reshape(n_chunks, chunk_size)
+
+            cache_key = (r['round_seed'], n_chunks)
+            perm = self._perm_cache.get(cache_key)
+            if perm is None:
+                chunk_rng = np.random.RandomState(r['round_seed'] ^ 0xC0FFEE)
+                perm = chunk_rng.permutation(n_chunks)
+                self._perm_cache[cache_key] = perm
 
             if encrypt:
-                chunks = []
-                for start in range(0, len(arr), chunk_size):
-                    chunk = arr[start:start + chunk_size].copy()
-                    chunk = AVAILABLE_TRANSFORMS[r['transform_type']](chunk, r['transform_key'])
-                    chunk = shuffle(chunk, r['shuffle_type'], r['shuffle_steps'], r['shuffle_variant'])
-                    chunks.append(chunk)
-                arr = np.concatenate([chunks[i] for i in perm])
+                mat = AVAILABLE_TRANSFORMS[r['transform_type']](mat, r['transform_key'])
+                mat = shuffle(mat, r['shuffle_type'], r['shuffle_steps'], r['shuffle_variant'])
+                arr = mat[perm].reshape(-1)
             else:
                 inv_perm = np.argsort(perm)
-                chunks = [arr[i * chunk_size:(i + 1) * chunk_size] for i in range(n_chunks)]
-                chunks = [chunks[i] for i in inv_perm]
-                processed = []
-                for chunk in chunks:
-                    chunk = chunk.copy()
-                    chunk = inverse_shuffle(chunk, r['shuffle_type'], r['shuffle_steps'], r['shuffle_variant'])
-                    chunk = AVAILABLE_TRANSFORMS[r['transform_type']](chunk, r['transform_key'])
-                    processed.append(chunk)
-                arr = np.concatenate(processed)
+                mat = mat[inv_perm]
+                mat = inverse_shuffle(mat, r['shuffle_type'], r['shuffle_steps'], r['shuffle_variant'])
+                mat = AVAILABLE_TRANSFORMS[r['transform_type']](mat, r['transform_key'])
+                arr = mat.reshape(-1)
 
         return arr.tobytes()
 
