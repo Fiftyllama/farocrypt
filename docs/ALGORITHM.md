@@ -22,18 +22,46 @@ Pad to multiple of 65536 bytes (max chunk size)
     ▼
 For each round r in round_structure:
     │
-    ├── Split data into chunks of size round_structure[r].chunk_size
+    ├── Split data into N chunks of size round_structure[r].chunk_size
     │
-    └── For each chunk:
-            │
-            ├── Apply transform  (byte-level, key-dependent)
-            └── Apply shuffle    (byte permutation, 1–4 steps)
+    ├── For each chunk (in parallel):
+    │       ├── Apply transform  (byte-level, key-dependent)
+    │       └── Apply shuffle    (byte permutation within chunk, 1–4 steps)
+    │
+    ├── Shuffle the ORDER of the N chunks
+    │       └── Key-derived permutation (seeded from round key material)
+    │
+    └── Reassemble chunks into a single data block
     │
     ▼
 Encrypted bytes
 ```
 
-Decryption reverses the order of rounds and swaps the operation order within each round (inverse-shuffle first, then the same transform, since transforms are self-inverse).
+### Why chunk-order shuffling produces diffusion
+
+Within a single round, the byte-level shuffle and transform only move bytes *within* their chunk — bytes in chunk 0 never interact with bytes in chunk 1. The chunk-order shuffle fixes this: after all chunks are processed internally, their positions in the output block are permuted. In the next round, a different chunk size is chosen, so boundaries cut across the old chunk boundaries. Bytes that were in separate chunks in round *r* now land in the same chunk in round *r+1*, where the transform and byte-level shuffle can mix them. This cascade of cut-then-mix-at-different-granularities is what creates genuine diffusion across the full data block.
+
+### Chunk-order permutation
+
+For a round with N chunks, the permutation is derived from the round's key material seed:
+
+```python
+chunk_rng = np.random.RandomState(round_seed ^ 0xC0FFEE)
+permutation = chunk_rng.permutation(N)          # encrypt: apply this order
+inverse_perm = np.argsort(permutation)          # decrypt: apply this order
+```
+
+The permutation is fully determined by the key and round number, so decryption can reconstruct and invert it without storing additional metadata.
+
+### Decryption
+
+Decryption reverses the order of rounds and, within each round:
+1. Reconstruct the chunk-order permutation from round key material.
+2. Split the block into N chunks and apply the **inverse permutation** to restore original chunk order.
+3. For each chunk: **inverse-shuffle** first, then the same **transform** (transforms are self-inverse).
+4. Reassemble.
+
+This is the exact mirror of the encryption pipeline.
 
 ---
 
@@ -172,7 +200,11 @@ Stored in metadata and checked before decryption to detect wrong-key attempts ea
 
 1. Verify key fingerprint matches metadata.
 2. Apply rounds in reverse order.
-3. Within each round: inverse-shuffle first, then the same transform (self-inverse).
+3. Within each round:
+   a. Reconstruct the chunk-order permutation from round key material.
+   b. Split the block into N chunks and apply the **inverse permutation**.
+   c. For each chunk: **inverse-shuffle** first, then the same **transform** (self-inverse).
+   d. Reassemble chunks into a single block.
 4. Trim output to `metadata.original_size`.
 
 ---

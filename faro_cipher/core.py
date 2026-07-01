@@ -194,6 +194,7 @@ class FaroCipher:
                 'transform_type':  transform_type,
                 'transform_key':   transform_key,
                 'round_chunk_size': chunk_size,
+                'round_seed':      int(round_seed),
             })
 
         return structure
@@ -223,17 +224,29 @@ class FaroCipher:
 
         for r in rounds:
             chunk_size = r['round_chunk_size']
-            out = np.empty_like(arr)
-            for start in range(0, len(arr), chunk_size):
-                chunk = arr[start:start + chunk_size].copy()
-                if encrypt:
+            n_chunks = len(arr) // chunk_size
+            chunk_rng = np.random.RandomState(r['round_seed'] ^ 0xC0FFEE)
+            perm = chunk_rng.permutation(n_chunks)
+
+            if encrypt:
+                chunks = []
+                for start in range(0, len(arr), chunk_size):
+                    chunk = arr[start:start + chunk_size].copy()
                     chunk = AVAILABLE_TRANSFORMS[r['transform_type']](chunk, r['transform_key'])
                     chunk = shuffle(chunk, r['shuffle_type'], r['shuffle_steps'], r['shuffle_variant'])
-                else:
+                    chunks.append(chunk)
+                arr = np.concatenate([chunks[i] for i in perm])
+            else:
+                inv_perm = np.argsort(perm)
+                chunks = [arr[i * chunk_size:(i + 1) * chunk_size] for i in range(n_chunks)]
+                chunks = [chunks[i] for i in inv_perm]
+                processed = []
+                for chunk in chunks:
+                    chunk = chunk.copy()
                     chunk = inverse_shuffle(chunk, r['shuffle_type'], r['shuffle_steps'], r['shuffle_variant'])
                     chunk = AVAILABLE_TRANSFORMS[r['transform_type']](chunk, r['transform_key'])
-                out[start:start + chunk_size] = chunk
-            arr = out
+                    processed.append(chunk)
+                arr = np.concatenate(processed)
 
         return arr.tobytes()
 

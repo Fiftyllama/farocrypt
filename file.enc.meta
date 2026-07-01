@@ -1,0 +1,10 @@
+{
+  "version": "faro_cipher_v2.0",
+  "profile": "balanced",
+  "rounds": 6,
+  "chunk_size": 65536,
+  "key_fingerprint": "4b160e6183f2e2a2",
+  "chunk_sizes": [
+    50842
+  ]
+}
