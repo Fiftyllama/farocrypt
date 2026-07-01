@@ -1,3 +1,5 @@
+# Beware, vibecoded slop
+
 # Faro Cipher
 
 A symmetric encryption system built on [Faro card shuffles](https://en.wikipedia.org/wiki/Faro_shuffle) combined with self-inverse byte transforms. Written as a research and learning project.
